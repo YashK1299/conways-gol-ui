@@ -3,19 +3,19 @@ import { Button, Col, Container, Row } from 'reactstrap';
 import axios from 'axios';
 
 const CELL_SIZE = 20;
-const INTERVAL_MS = 100;
 
 function GameOfLife() {
-  const [grid, setGrid] = useState([]);
+  const [board, setBoard] = useState([]);
   const [rows, setRows] = useState(0);
   const [cols, setCols] = useState(0);
+  const [speed, setSpeed] = useState(100);
   const [isPlaying, setIsPlaying] = useState(false);
 
   useEffect(() => {
-    // Get the initial grid from the server
-    axios.get('/gameoflife/grid')
+    // Get the initial game board from the server
+    axios.get('/gameoflife/gameBoard')
       .then(response => {
-        setGrid(response.data);
+        setBoard(response.data);
         setRows(response.data.length);
         setCols(response.data[0].length);
       })
@@ -24,21 +24,22 @@ function GameOfLife() {
 
   useEffect(() => {
     let intervalId;
-
     if (isPlaying) {
       intervalId = setInterval(() => {
         // Step to the next generation
-        axios.post('/gameoflife/step')
+        axios.put('/gameoflife/nextGen')
           .then(() => {
-            // Get the updated grid from the server
-            axios.get('/gameoflife/grid')
+            axios.get('/gameoflife/isGameOver')
               .then(response => {
-                setGrid(response.data);
-              })
-              .catch(error => console.log(error));
-          })
-          .catch(error => console.log(error));
-      }, INTERVAL_MS);
+                if (response.data)
+                  setIsPlaying(false);
+                axios.get('/gameoflife/gameBoard')
+                  .then(response => {
+                    setBoard(response.data);
+                  }).catch(error => console.log(error));
+              }).catch(error => console.log(error));
+          }).catch(error => console.log(error));
+      }, speed);
     } else {
       clearInterval(intervalId);
     }
@@ -46,18 +47,66 @@ function GameOfLife() {
     return () => clearInterval(intervalId);
   }, [isPlaying]);
 
+  const reduceSpeed = () => {
+    if (speed > 50) {
+      setSpeed(speed - 50);
+    }
+  }
+
+  const increaseSpeed = () => {
+    setSpeed(speed + 50);
+  }
+
+  const getBoard = () => {
+    axios.get('/gameoflife/gameBoard')
+      .then(response => {
+        setBoard(response.data);
+        console.log(response.data);
+      })
+      .catch(error => console.log(error));
+  }
+
+  const handleUpdateGameBoard = () => {
+    // Create a new game on the server
+    axios.put('/gameoflife/editGameBoardSize', {
+      rows: rows,
+      cols: cols
+    })
+      .then(() => {
+        // Get the updated game board from the server
+        getBoard();
+      })
+      .catch(error => console.log(error));
+  };
+
+  const handleRandomGame = () => {
+    // Create a new game on the server
+    axios.put('/gameoflife/randomGame')
+      .then(() => {
+        // Get the updated game board from the server
+        axios.get('/gameoflife/gameBoard')
+          .then(response => {
+            setBoard(response.data);
+            console.log(response.data);
+          })
+          .catch(error => console.log(error));
+      })
+      .catch(error => console.log(error));
+  };
+
   const handleCellClick = (row, col) => {
-    // Set the state of the clicked cell
-    const newGrid = [...grid];
-    newGrid[row][col] = !newGrid[row][col];
-    setGrid(newGrid);
 
     // Update the cell state on the server
-    axios.post('/gameoflife/cell', {
+    axios.put('/gameoflife/toggleCell', {
       row: row,
       col: col,
-      state: newGrid[row][col]
     })
+      .then(() => {
+        // Set the state of the clicked cell
+        const updatedBoard = [...board];
+        updatedBoard[row][col] = !updatedBoard[row][col];
+        setBoard(updatedBoard);
+      })
       .catch(error => console.log(error));
   };
 
@@ -67,37 +116,39 @@ function GameOfLife() {
 
   const handleResetClick = () => {
     // Reset the game on the server
-    axios.post('/gameoflife/reset')
+    axios.put('/gameoflife/resetGame')
       .then(() => {
-        // Get the updated grid from the server
-        axios.get('/gameoflife/grid')
+        // Get the updated game board from the server
+        axios.get('/gameoflife/gameBoard')
           .then(response => {
-            setGrid(response.data);
+            setBoard(response.data);
           })
           .catch(error => console.log(error));
       })
       .catch(error => console.log(error));
   };
 
-  const renderGrid = () => {
+  const renderGameBoard = () => {
     return (
       <div
         style={{
-          width: cols * CELL_SIZE,
-          height: rows * CELL_SIZE,
+          width: board.length * CELL_SIZE,
+          height: board[0].length * CELL_SIZE,
           display: 'grid',
-          gridTemplateColumns: `repeat(${cols}, ${CELL_SIZE}px)`
+          margin: 'auto',
+          gridTemplateColumns: `repeat(${board[0].length}, ${CELL_SIZE + 4}px)`,
         }}
       >
-        {grid.map((row, rowIndex) => (
+        {board.map((row, rowIndex) => (
           row.map((cell, colIndex) => (
             <div
               key={`${rowIndex}-${colIndex}`}
               style={{
-                width: CELL_SIZE,
+                // width: CELL_SIZE,
                 height: CELL_SIZE,
                 backgroundColor: cell ? 'black' : 'white',
-                border: '1px solid gray'
+                margin: '1px',
+                border: '1px solid gray',
               }}
               onClick={() => handleCellClick(rowIndex, colIndex)}
             />
@@ -116,33 +167,41 @@ function GameOfLife() {
       </Row>
       <Row>
         <Col>
-            <label>
-                Rows: 
-                <input type="text" value={this.state.rows} onChange={this.handleRowsChange} />
-            </label>
-        </Col>
-        <Col>
-            <label>
-                Columns: 
-                <input type="text" value={this.state.cols} onChange={this.handleColsChange} />
-            </label>
-        </Col>
-      </Row>
-      <Row>
-        <Col>
-          {renderGrid()}
-        </Col>
-      </Row>
-      <Row>
-        <Col>
+          <label>
+            Rows:
+            <input type="text" value={rows} onChange={e => setRows(e.target.value)} />
+          </label>
+          <label>
+            Columns:
+            <input type="text" value={cols} onChange={e => setCols(e.target.value)} />
+          </label>
+          <Button onClick={handleUpdateGameBoard}>
+            {'Create Board'}
+          </Button>
+          <Button onClick={handleRandomGame}>
+            {'Random Game'}
+          </Button>
           <Button color={isPlaying ? 'danger' : 'success'} onClick={handlePlayClick}>
             {isPlaying ? 'Stop' : 'Start'}
           </Button>
           <Button color="primary" onClick={handleResetClick}>Reset</Button>
         </Col>
       </Row>
+      <Row>
+        <Col>
+          <label>Speed:</label>
+          <Button onClick={((reduceSpeed))}>-</Button>
+          <input type="text" value={speed} onChange={e => setSpeed(e.target.value)} />
+          <Button onClick={increaseSpeed}>+</Button>
+        </Col>
+      </Row>
+      <Row>
+        <Col>
+          {renderGameBoard()}
+        </Col>
+      </Row>
     </Container>
   );
 }
- 
+
 export default GameOfLife;
