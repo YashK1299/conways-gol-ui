@@ -12,6 +12,10 @@ This is the implementation of Conway's Game Of Life frontend, and uses React, Ja
 
 These endpoints can be provided by a front end server to access all the in game functionality.
 
+## Screenshot
+
+![Conway's Game of Life GUI](resources/gol.png)
+
 ## Problem Statement
 
 * Implement Conway's Game of Life (http://en.wikipedia.org/wiki/Conway%27s_Game_of_Life).
