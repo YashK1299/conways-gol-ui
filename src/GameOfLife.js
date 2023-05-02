@@ -1,108 +1,77 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Button, Col, Container, Row } from 'reactstrap';
 import axios from 'axios';
 
-const CELL_SIZE = 20;
 
 function GameOfLife() {
+  const CELL_SIZE = 20;
   const [board, setBoard] = useState([]);
   const [rows, setRows] = useState(0);
   const [cols, setCols] = useState(0);
-  const [speed, setSpeed] = useState(100);
+  const [speed, setSpeed] = useState(200);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  useEffect(() => {
-    // Get the initial game board from the server
-    axios.get('/gameoflife/gameBoard')
-      .then(response => {
-        setBoard(response.data);
-        setRows(response.data.length);
-        setCols(response.data[0].length);
-      })
-      .catch(error => console.log(error));
-  }, []);
+  // Step to next generation
+  const handleNextGeneration = useCallback(() =>
+    axios.put('/gameoflife/nextGen')
+      .then(() => {
+        axios.get('/gameoflife/isGameOver')
+          .then(response => {
+            if (response.data)
+              setIsPlaying(false);
+            getBoard();
+          }).catch(error => console.log(error));
+      }).catch(error => console.log(error)), []);
 
+  // Play the game when started
   useEffect(() => {
     let intervalId;
     if (isPlaying) {
-      intervalId = setInterval(() => {
-        // Step to the next generation
-        axios.put('/gameoflife/nextGen')
-          .then(() => {
-            axios.get('/gameoflife/isGameOver')
-              .then(response => {
-                if (response.data)
-                  setIsPlaying(false);
-                axios.get('/gameoflife/gameBoard')
-                  .then(response => {
-                    setBoard(response.data);
-                  }).catch(error => console.log(error));
-              }).catch(error => console.log(error));
-          }).catch(error => console.log(error));
-      }, speed);
+      intervalId = setInterval(handleNextGeneration, speed);
     } else {
       clearInterval(intervalId);
     }
-
     return () => clearInterval(intervalId);
-  }, [isPlaying]);
+  }, [handleNextGeneration, isPlaying, speed]);
 
-  const reduceSpeed = () => {
-    if (speed > 50) {
-      setSpeed(speed - 50);
-    }
-  }
-
-  const increaseSpeed = () => {
-    setSpeed(speed + 50);
-  }
-
+  // Get the updated game board from the server
   const getBoard = () => {
     axios.get('/gameoflife/gameBoard')
       .then(response => {
+        setRows(response.data.length);
+        setCols(response.data[0].length);
         setBoard(response.data);
-        console.log(response.data);
       })
       .catch(error => console.log(error));
   }
 
+  // Get the initial game board from the server
+  useEffect(getBoard, []);
+
+  // Update the game board size
   const handleUpdateGameBoard = () => {
-    // Create a new game on the server
     axios.put('/gameoflife/editGameBoardSize', {
       rows: rows,
       cols: cols
     })
-      .then(() => {
-        // Get the updated game board from the server
-        getBoard();
-      })
+      .then(getBoard)
       .catch(error => console.log(error));
   };
 
+  // Create a random civilization in the game board
   const handleRandomGame = () => {
-    // Create a new game on the server
     axios.put('/gameoflife/randomGame')
-      .then(() => {
-        // Get the updated game board from the server
-        axios.get('/gameoflife/gameBoard')
-          .then(response => {
-            setBoard(response.data);
-            console.log(response.data);
-          })
-          .catch(error => console.log(error));
-      })
+      .then(getBoard)
       .catch(error => console.log(error));
   };
 
+  // Toggle the state of the clicked cell from live to dead and vice-versa
   const handleCellClick = (row, col) => {
-
-    // Update the cell state on the server
     axios.put('/gameoflife/toggleCell', {
       row: row,
       col: col,
     })
       .then(() => {
-        // Set the state of the clicked cell
         const updatedBoard = [...board];
         updatedBoard[row][col] = !updatedBoard[row][col];
         setBoard(updatedBoard);
@@ -110,30 +79,22 @@ function GameOfLife() {
       .catch(error => console.log(error));
   };
 
-  const handlePlayClick = () => {
-    setIsPlaying(!isPlaying);
-  };
+  // Toggle between game start and stop
+  const handlePlayClick = () => setIsPlaying(!isPlaying);
 
+  // Reset the game board with an empty civilization
   const handleResetClick = () => {
-    // Reset the game on the server
     axios.put('/gameoflife/resetGame')
-      .then(() => {
-        // Get the updated game board from the server
-        axios.get('/gameoflife/gameBoard')
-          .then(response => {
-            setBoard(response.data);
-          })
-          .catch(error => console.log(error));
-      })
+      .then(getBoard)
       .catch(error => console.log(error));
   };
 
   const renderGameBoard = () => {
-    return (
+    return (board && board.length !== 0) ? (
       <div
         style={{
-          width: board.length * CELL_SIZE,
-          height: board[0].length * CELL_SIZE,
+          width: board[0].length * CELL_SIZE,
+          height: board.length * CELL_SIZE,
           display: 'grid',
           margin: 'auto',
           gridTemplateColumns: `repeat(${board[0].length}, ${CELL_SIZE + 4}px)`,
@@ -155,7 +116,7 @@ function GameOfLife() {
           ))
         ))}
       </div>
-    );
+    ) : null;
   };
 
   return (
@@ -169,33 +130,48 @@ function GameOfLife() {
         <Col>
           <label>
             Rows:
+            <Button style={{ margin: '0 1px 0 10px' }} onClick={() => setRows(rows - 1)}>-</Button>
             <input type="text" value={rows} onChange={e => setRows(e.target.value)} />
+            <Button style={{ margin: '0 10px 0 1px' }} onClick={() => setRows(rows + 1)}>+</Button>
           </label>
           <label>
             Columns:
+            <Button style={{ margin: '0 1px 0 10px' }} onClick={() => setCols(cols - 1)}>-</Button>
             <input type="text" value={cols} onChange={e => setCols(e.target.value)} />
+            <Button style={{ margin: '0 10px 0 1px' }} onClick={() => setCols(cols + 1)}>+</Button>
           </label>
-          <Button onClick={handleUpdateGameBoard}>
+        </Col>
+      </Row>
+      <Row style={{ marginTop: '10px' }}>
+        <Col>
+          <Button style={{ margin: '0 10px' }} onClick={handleUpdateGameBoard}>
             {'Create Board'}
           </Button>
-          <Button onClick={handleRandomGame}>
+          <Button style={{ margin: '0 10px' }} onClick={handleRandomGame}>
             {'Random Game'}
           </Button>
-          <Button color={isPlaying ? 'danger' : 'success'} onClick={handlePlayClick}>
+        </Col>
+      </Row>
+      <Row style={{ marginTop: '10px' }}>
+        <Col>
+          <Button style={{ margin: '0 10px' }} color="primary" onClick={handleNextGeneration}>
+            Next Step
+          </Button>
+          <Button style={{ margin: '0 10px' }} color={isPlaying ? 'danger' : 'success'} onClick={handlePlayClick}>
             {isPlaying ? 'Stop' : 'Start'}
           </Button>
-          <Button color="primary" onClick={handleResetClick}>Reset</Button>
+          <Button style={{ margin: '0 10px' }} color="primary" onClick={handleResetClick}>Reset</Button>
         </Col>
       </Row>
-      <Row>
+      <Row style={{ marginTop: '10px' }}>
         <Col>
-          <label>Speed:</label>
-          <Button onClick={((reduceSpeed))}>-</Button>
+          <label>Delay:</label>
+          <Button style={{ margin: '0 1px 0 10px' }} onClick={() => setSpeed(speed - 50)}>-</Button>
           <input type="text" value={speed} onChange={e => setSpeed(e.target.value)} />
-          <Button onClick={increaseSpeed}>+</Button>
+          <Button style={{ margin: '0 10px 0 1px' }} onClick={() => setSpeed(speed + 50)}>+</Button>
         </Col>
       </Row>
-      <Row>
+      <Row style={{ marginTop: '10px' }}>
         <Col>
           {renderGameBoard()}
         </Col>
